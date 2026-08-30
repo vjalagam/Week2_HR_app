@@ -11,6 +11,7 @@ The pipeline follows the requested 5-step flow:
 3. Grader: filter the retrieved chunks by relevance
 4. Generator: produce a grounded answer from the filtered context
 5. Checker: verify the answer is supported by the source documents and retry up to 2 times if needed
+<img width="1024" height="1536" alt="image" src="https://github.com/user-attachments/assets/ea284d2e-867a-4ea6-b2f3-181d08034067" />
 
 ## Project layout
 
