@@ -57,71 +57,9 @@ python main.py --question "What is the API rate limit?" --role engineer
 
 ## 3. Architecture
 
-```text
-                         INGESTION (run when documents change)
+![Hand-drawn Enterprise RAG architecture](Docs/assets/rag-architecture-sketch.png)
 
-   Docs/*.txt  --->  split into chunks  --->  create embeddings
-       |                                           |
-       |                         +-----------------+
-       |                         |
-       |                         v
-       |                 Pinecone namespaces
-       |                 [hr] [technical] [compliance]
-       |                    (optional cloud path)
-       |
-       +-------------------- local fallback search
-
-
-                              QUESTION FLOW
-
-                         +-------------------+
-   natural question ---> |  Streamlit / CLI  |
-                         +---------+---------+
-                                   |
-                                   v
-                         +-------------------+
-                         |  1. ROUTER        |
-                         |  Which category?  |
-                         +---------+---------+
-                                   |
-                                   v
-                         +-------------------+
-              +--------> |  2. RETRIEVER     |
-              |          |  Find best chunks |
-              |          +---------+---------+
-              |                    |
-     retry if |                    v
- not relevant |          +-------------------+
-              +----------|  3. GRADER        |
-                         |  Keep useful text |
-                         +---------+---------+
-                                   |
-                                   v
-                         +-------------------+
-              +--------> |  4. GENERATOR     |
-              |          |  Draft the answer |
-              |          +---------+---------+
-              |                    |
-  regenerate  |                    v
- if unsupported         +-------------------+
-              +----------|  5. CHECKER       |
-                         |  Verify all claims|
-                         +---------+---------+
-                                   |
-                                   v
-                         +-------------------+
-                         | ANSWER + SOURCES  |
-                         | namespace/retries |
-                         +---------+---------+
-                                   |
-                                   v
-                         SQLite history + feedback
-
-   Nebius can assist Router, Grader, Generator, and Checker.
-   If Nebius or Pinecone is unavailable, the local fallback keeps the flow running.
-```
-
-This is intentionally shown as a working-team sketch: ingestion prepares the knowledge base, while every user question passes through the five query nodes before the UI displays an answer.
+The sketch separates document ingestion from the live question flow. Every user question passes through the five query nodes before the UI displays a verified answer and its sources.
 
 ### Graph state
 
