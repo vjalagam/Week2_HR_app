@@ -13,7 +13,7 @@ The Enterprise RAG Chatbot answers natural-language questions using approved ABC
 The five-stage LangGraph workflow is:
 
 1. **Router** — automatically classifies the question.
-2. **Retriever** — searches only namespaces permitted for the user's role.
+2. **Retriever** — searches the automatically selected document namespace.
 3. **Grader** — removes irrelevant chunks.
 4. **Generator** — produces an answer from the retained context.
 5. **Checker** — accepts the answer only when all claims are supported by the combined source context.
@@ -41,18 +41,12 @@ Users can:
 - Mark responses helpful or unhelpful.
 - Start a new conversation.
 
-Authentication is optional for local use. With `AUTH_REQUIRED=false`, the UI uses a local demo identity. When enabled, users authenticate with configured PBKDF2 password hashes and retrieval is restricted by role.
+The UI currently opens directly with a local demo identity. Authentication is intentionally deferred for this learning use case.
 
 ### CLI
 
 ```bash
 python main.py --question "How many days of annual leave do employees receive?"
-```
-
-An optional role may be provided:
-
-```bash
-python main.py --question "What is the API rate limit?" --role engineer
 ```
 
 ## 3. Architecture
@@ -74,7 +68,6 @@ The sketch separates document ingestion from the live question flow. Every user 
 | `generation` | Generated answer or refusal |
 | `hallucination_result` | `grounded` or `not_grounded` |
 | `retry_count` | Current retry/check counter |
-| `role` | Role used for retrieval authorization |
 | `correlation_id` | Request identifier included in logs and UI metadata |
 
 ## 4. Processing behavior
@@ -85,15 +78,7 @@ The router returns `hr`, `technical`, `compliance`, or `general`. Nebius perform
 
 ### Retrieval and access control
 
-Specific-domain questions retrieve up to four chunks from the selected namespace. General questions search the permitted namespaces and retrieve up to two chunks from each. Role filtering is enforced after retrieval as defense in depth.
-
-| Role | Accessible namespaces |
-|---|---|
-| `admin` | HR, technical, compliance |
-| `employee` | HR, technical, compliance |
-| `hr` | HR |
-| `engineer` | Technical |
-| `compliance` | Compliance |
+Specific-domain questions retrieve up to four chunks from the selected namespace. General questions search all three document namespaces and retrieve up to two chunks from each.
 
 Pinecone documents are indexed into matching `hr`, `technical`, and `compliance` namespaces. If an older index used the former `enterprise` namespace, run the indexing command once to populate the corrected namespaces:
 
@@ -125,29 +110,15 @@ only when the answer contains exclusively information supported by the provided 
 
 Implemented controls include:
 
-- PBKDF2-SHA256 password hashing with constant-time verification.
-- Role-based namespace authorization.
 - Question normalization and configurable maximum length.
 - Per-identity request limiting.
 - JSON logs with correlation IDs, status, and operation duration.
 - User-safe UI errors that avoid exposing internal exceptions.
-- Secret values loaded from environment variables or mounted `*_FILE` paths.
+- Provider secret values loaded from environment variables or mounted `*_FILE` paths.
 - SQLite persistence for messages and feedback.
 - `.env` and local databases excluded through `.gitignore`.
 
-For this local learning use case, authentication is disabled in the current local `.env`:
-
-```env
-AUTH_REQUIRED=false
-```
-
-To enable authentication, set `AUTH_REQUIRED=true` and provide `AUTH_USERS_JSON`. Generate a password hash with:
-
-```bash
-python -c "from enterprise_rag.security import hash_password; print(hash_password('replace-this-password'))"
-```
-
-Do not commit real credentials or password hashes.
+Authentication and user authorization are not included in the current local learning version. Do not expose the application publicly without adding an appropriate identity layer.
 
 ## 6. Persistence and feedback
 
@@ -174,9 +145,6 @@ SQLite is appropriate for this single-machine learning project. No Docker, Kuber
 | `PINECONE_ENVIRONMENT` | Empty | Pinecone serverless region |
 | `PINECONE_INDEX_NAME` | `abc-enterprise-rag` | Vector index |
 | `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
-| `AUTH_REQUIRED` | `true` | Requires UI login |
-| `AUTH_USERS_JSON` | `{}` | User hashes and roles |
-| `AUTH_USERS_JSON_FILE` | Empty | Reads users from a mounted secret file |
 | `RAG_DATABASE_PATH` | `data/rag.db` | SQLite database |
 | `RATE_LIMIT_PER_MINUTE` | `30` | Requests allowed per identity |
 | `MAX_QUESTION_LENGTH` | `2000` | Input-length limit |
@@ -190,7 +158,7 @@ SQLite is appropriate for this single-machine learning project. No Docker, Kuber
 | `main.py` | Root CLI entry point |
 | `enterprise_rag/app.py` | Validated request execution and CLI handling |
 | `enterprise_rag/config.py` | Environment and secret-file configuration |
-| `enterprise_rag/security.py` | Authentication, authorization, validation, and rate limiting |
+| `enterprise_rag/security.py` | Input validation and local rate limiting |
 | `enterprise_rag/observability.py` | JSON logs, correlation IDs, and timings |
 | `enterprise_rag/storage.py` | SQLite chat and feedback persistence |
 | `enterprise_rag/data_ingestion.py` | TXT loading, namespace inference, and chunking |
@@ -213,7 +181,6 @@ The current suite covers:
 
 - Namespace routing
 - Offline grounded answers
-- Password hashing and role mapping
 - Input validation
 - Durable history and feedback
 - Evaluation metrics
@@ -248,7 +215,7 @@ Pinecone and Nebius are optional. Leave their keys empty for offline fallback mo
 - SQLite is designed for one-machine use.
 - Rate limiting is process-local and resets when the app restarts.
 - Source excerpts do not yet provide section-level or claim-level citations.
-- General employee access currently includes all three bundled knowledge domains.
+- The application has no authentication or per-user document authorization.
 - Retry counting is shared across grading and checking.
 - Document chunks are loaded and created for each request rather than cached.
 

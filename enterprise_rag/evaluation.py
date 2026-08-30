@@ -16,7 +16,7 @@ def evaluate(path: Path) -> dict:
     examples = json.loads(path.read_text(encoding="utf-8"))
     results = []
     for item in examples:
-        output = run_question(item["question"], role=item.get("role", "employee"), identity="evaluation")
+        output = run_question(item["question"], identity="evaluation")
         results.append({"question": item["question"], "route_correct": output.get("doc_type") == item["namespace"],
                         "grounded": output.get("hallucination_result") == "grounded",
                         "f1": token_f1(output.get("generation", ""), item["reference"])})

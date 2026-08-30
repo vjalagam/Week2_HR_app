@@ -2,49 +2,23 @@ import uuid
 import streamlit as st
 from enterprise_rag.app import run_question
 from enterprise_rag.config import SETTINGS
-from enterprise_rag.security import authenticate
 from enterprise_rag.storage import ChatStore
 
 st.set_page_config(page_title="Enterprise RAG Chatbot", page_icon="💼", layout="wide")
 st.title("💼 Enterprise RAG Chatbot")
 st.caption("Ask naturally—ABC automatically finds the right HR, technical, or compliance sources.")
 
-def login():
-    if not SETTINGS.auth_required:
-        st.session_state.user = {"username": "local-demo", "role": "employee"}
-        return
-    if not SETTINGS.auth_users:
-        st.error("Authentication is required but AUTH_USERS_JSON has no users. Ask an administrator to configure access.")
-        st.stop()
-    with st.form("login"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Sign in")
-    if submitted:
-        user = authenticate(username, password)
-        if user:
-            st.session_state.user = user
-            st.rerun()
-        st.error("Invalid username or password.")
-    st.stop()
-
-if "user" not in st.session_state:
-    login()
-user = st.session_state.user
+username = "local-demo"
 store = ChatStore()
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if "messages" not in st.session_state:
-    st.session_state.messages = store.history(st.session_state.session_id, user["username"])
+    st.session_state.messages = store.history(st.session_state.session_id, username)
 
 with st.sidebar:
-    st.write(f"Signed in as **{user['username']}** ({user['role']})")
     if st.button("New conversation"):
         st.session_state.session_id = str(uuid.uuid4())
         st.session_state.messages = []
-        st.rerun()
-    if SETTINGS.auth_required and st.button("Sign out"):
-        st.session_state.clear()
         st.rerun()
     st.markdown("### Automatic search")
     st.markdown("No category selection needed. Ask a question or continue with a natural follow-up.")
@@ -69,7 +43,7 @@ with st.sidebar:
         st.markdown(
             """
             1. **Router** — automatically selects HR, technical, compliance, or general.
-            2. **Retriever** — finds the most relevant permitted chunks.
+            2. **Retriever** — finds the most relevant document chunks.
             3. **Grader** — removes chunks unrelated to the question.
             4. **Generator** — creates an answer using only retained context.
             5. **Checker** — verifies every answer claim against the sources.
@@ -121,21 +95,21 @@ def show_message(message):
             if message_id:
                 left, right = st.columns(2)
                 if left.button("👍 Helpful", key=f"up-{message_id}"):
-                    store.add_feedback(message_id, st.session_state.session_id, user["username"], 1)
+                    store.add_feedback(message_id, st.session_state.session_id, username, 1)
                 if right.button("👎 Not helpful", key=f"down-{message_id}"):
-                    store.add_feedback(message_id, st.session_state.session_id, user["username"], -1)
+                    store.add_feedback(message_id, st.session_state.session_id, username, -1)
 
 for message in st.session_state.messages:
     show_message(message)
 
 if prompt := st.chat_input("Ask a question in your own words..."):
     user_message = {"role": "user", "content": prompt, "metadata": {}}
-    user_message["id"] = store.add_message(st.session_state.session_id, user["username"], "user", prompt)
+    user_message["id"] = store.add_message(st.session_state.session_id, username, "user", prompt)
     st.session_state.messages.append(user_message)
     try:
         history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
         with st.spinner("Routing, retrieving, and verifying..."):
-            result = run_question(prompt, role=user["role"], history=history, identity=user["username"])
+            result = run_question(prompt, history=history, identity=username)
         sources = [{"source": d.metadata.get("source", "unknown"), "namespace": d.metadata.get("namespace", "general"),
                     "excerpt": d.page_content[:200]} for d in result.get("documents", [])]
         metadata = {"namespace": result.get("doc_type", "general"),
@@ -143,7 +117,7 @@ if prompt := st.chat_input("Ask a question in your own words..."):
                     "retry_count": result.get("retry_count", 0),
                     "correlation_id": result.get("correlation_id"), "sources": sources}
         content = result.get("generation", "No grounded answer was found.")
-        message_id = store.add_message(st.session_state.session_id, user["username"], "assistant", content, metadata)
+        message_id = store.add_message(st.session_state.session_id, username, "assistant", content, metadata)
         st.session_state.messages.append({"id": message_id, "role": "assistant", "content": content, "metadata": metadata})
         st.rerun()
     except (ValueError, RuntimeError) as exc:

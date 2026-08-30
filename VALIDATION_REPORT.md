@@ -70,7 +70,7 @@ The previously documented production gaps are now addressed in code and deployme
 
 | Previous gap | Status | Implementation |
 |-----|--------|-----------|
-| Authentication/authorization | ✅ | PBKDF2 authentication and role-scoped retrieval |
+| Authentication/authorization | Deferred | Removed for the current local learning use case |
 | Observability/logging | ✅ | Structured JSON logs, correlation IDs, and timings |
 | Formal evaluation metrics | ✅ | Labeled dataset with route accuracy, grounded rate, and token F1 |
 | Hardened secret handling | ✅ | Mounted `*_FILE` secrets supported; secrets excluded from images/source |

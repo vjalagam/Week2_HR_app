@@ -12,7 +12,6 @@ from langgraph.graph import END, StateGraph
 from .config import SETTINGS
 from .data_ingestion import chunk_documents, load_enterprise_documents
 from .vector_store import search_documents
-from .security import allowed_namespaces
 
 # Constants
 MAX_RETRIES = 2
@@ -30,7 +29,6 @@ class RAGState(TypedDict):
     generation: str  # the generated answer
     hallucination_result: str  # 'grounded', 'not_grounded'
     retry_count: int
-    role: str
     conversation_history: list[dict[str, str]]
     correlation_id: str
     retrieval_query: str
@@ -140,21 +138,13 @@ def retriever_node(state: RAGState) -> RAGState:
     doc_type = state["doc_type"]
     retry_count = state.get("retry_count", 0)
     
-    permitted = allowed_namespaces(state.get("role", "employee"))
-    if doc_type != "general" and doc_type not in permitted:
-        state["documents"] = []
-        state["grading_result"] = "access_denied"
-        return state
-
-    # After failed grading, widen to permitted namespaces only
+    # After failed grading, widen to all namespaces.
     if state.get("grading_result") == "not_relevant" and retry_count > 0:
-        documents = []
-        for namespace in sorted(permitted):
-            documents.extend(search_documents(question, namespace, all_chunks, k=TOP_K_GENERAL))
+        documents = retrieve_documents(question, "general", all_chunks)
     else:
         documents = retrieve_documents(question, doc_type, all_chunks)
 
-    state["documents"] = [d for d in documents if d.metadata.get("namespace") in permitted]
+    state["documents"] = documents
     return state
 
 
@@ -187,9 +177,6 @@ def grade_chunk(question: str, chunk: Document) -> bool:
 
 def grader_node(state: RAGState) -> RAGState:
     """Grade each retrieved document for relevance."""
-    if state.get("grading_result") == "access_denied":
-        state["generation"] = "You do not have permission to access documents in this category."
-        return state
     documents = state["documents"]
     question = state["question"]
     
@@ -214,9 +201,6 @@ def generator_node(state: RAGState) -> RAGState:
     documents = state["documents"]
     question = state["question"]
     llm = get_llm()
-    if state.get("grading_result") == "access_denied":
-        state["generation"] = "You do not have permission to access documents in this category."
-        return state
     
     # Format context: chunk text only, no filenames
     if documents:
@@ -334,8 +318,6 @@ def route_after_grader(state: RAGState):
     grading_result = state.get("grading_result")
     retry_count = state.get("retry_count", 0)
     
-    if grading_result == "access_denied":
-        return "generator"
     if grading_result == "not_relevant":
         # If max retries reached, proceed to generator anyway
         if retry_count >= MAX_RETRIES:

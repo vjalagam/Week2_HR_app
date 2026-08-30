@@ -52,12 +52,12 @@ The pipeline follows the requested 5-step flow:
 
 ## Production controls
 
-- Authentication uses PBKDF2 password hashes supplied through `AUTH_USERS_JSON`; role-based access is enforced again at retrieval time.
-- Set `AUTH_REQUIRED=false` only for local demos. Production secrets can be mounted through `NEBIUS_API_KEY_FILE`, `PINECONE_API_KEY_FILE`, and `AUTH_USERS_JSON_FILE`.
+- The UI currently runs directly in local-demo mode without authentication.
+- Production secrets can be mounted through `NEBIUS_API_KEY_FILE` and `PINECONE_API_KEY_FILE`.
 - Chat history and user feedback persist locally in SQLite at `RAG_DATABASE_PATH`.
 - Every request emits JSON logs containing a correlation ID and latency. The UI exposes that ID for support investigations.
-- Questions are length-validated and rate-limited per authenticated identity.
-- Pinecone ingestion writes each document category to its own namespace and retrieval applies role permissions.
+- Questions are length-validated and rate-limited for the local application identity.
+- Pinecone ingestion writes each document category to its own namespace.
 
 Run the labeled evaluation suite with:
 

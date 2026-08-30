@@ -1,5 +1,4 @@
 import os
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -33,8 +32,6 @@ class Settings:
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     database_path: Path = Path(os.getenv("RAG_DATABASE_PATH", str(project_root / "data" / "rag.db")))
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
-    auth_required: bool = os.getenv("AUTH_REQUIRED", "true").lower() in {"1", "true", "yes"}
-    auth_users_json: str = secret("AUTH_USERS_JSON") or "{}"
     rate_limit_per_minute: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
     max_question_length: int = int(os.getenv("MAX_QUESTION_LENGTH", "2000"))
 
@@ -45,15 +42,5 @@ class Settings:
     @property
     def has_pinecone(self) -> bool:
         return bool(self.pinecone_api_key)
-
-    @property
-    def auth_users(self) -> dict[str, dict[str, str]]:
-        """Users are supplied by a secret store as JSON; passwords must be hashed."""
-        try:
-            value = json.loads(self.auth_users_json)
-            return value if isinstance(value, dict) else {}
-        except json.JSONDecodeError:
-            return {}
-
 
 SETTINGS = Settings()

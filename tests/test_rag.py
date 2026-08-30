@@ -4,7 +4,7 @@ from pathlib import Path
 
 from enterprise_rag.app import answer_question
 from enterprise_rag.graph import classify_namespace, contextualize_question
-from enterprise_rag.security import allowed_namespaces, hash_password, verify_password, validate_question
+from enterprise_rag.security import validate_question
 from enterprise_rag.storage import ChatStore
 from enterprise_rag.evaluation import token_f1
 
@@ -20,11 +20,7 @@ class TestRAGPipeline(unittest.TestCase):
         self.assertIn("15", answer)
         self.assertIn("annual leave", answer.lower())
 
-    def test_security_controls(self):
-        encoded = hash_password("correct horse")
-        self.assertTrue(verify_password("correct horse", encoded))
-        self.assertFalse(verify_password("wrong", encoded))
-        self.assertEqual(allowed_namespaces("engineer"), {"technical"})
+    def test_input_validation(self):
         self.assertEqual(validate_question("  hello  "), "hello")
 
     def test_durable_history_and_feedback(self):
