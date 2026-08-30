@@ -1,6 +1,6 @@
 # Enterprise RAG with LangGraph + Pinecone + Nebius
 
-This project builds a production-style retrieval-augmented generation workflow for HR, technical, and compliance knowledge over enterprise documents.
+This project builds a production-hardened retrieval-augmented generation workflow for HR, technical, and compliance knowledge over enterprise documents.
 
 ## Architecture
 
@@ -48,4 +48,19 @@ The pipeline follows the requested 5-step flow:
 ## Notes
 
 - When external API keys are not configured, the app falls back to a local lexical retrieval path so the system still runs in a demo/offline mode.
-- When Nebius credentials are present, the router, grader, generator, and checker use the Nebius OpenAI-compatible endpoint.
+- When Nebius credentials are present, the router, grader, generator, and checker use the Nebius Token Factory OpenAI-compatible endpoint.
+
+## Production controls
+
+- Authentication uses PBKDF2 password hashes supplied through `AUTH_USERS_JSON`; role-based access is enforced again at retrieval time.
+- Set `AUTH_REQUIRED=false` only for local demos. Production secrets can be mounted through `NEBIUS_API_KEY_FILE`, `PINECONE_API_KEY_FILE`, and `AUTH_USERS_JSON_FILE`.
+- Chat history and user feedback persist locally in SQLite at `RAG_DATABASE_PATH`.
+- Every request emits JSON logs containing a correlation ID and latency. The UI exposes that ID for support investigations.
+- Questions are length-validated and rate-limited per authenticated identity.
+- Pinecone ingestion writes each document category to its own namespace and retrieval applies role permissions.
+
+Run the labeled evaluation suite with:
+
+    python -m enterprise_rag.evaluation evaluation/dataset.json
+
+Run the application locally with `streamlit run ui.py` after activating the project virtual environment.

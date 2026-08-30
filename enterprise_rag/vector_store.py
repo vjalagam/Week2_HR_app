@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from typing import List, Optional
+import logging
+import warnings
+from functools import lru_cache
 
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -31,11 +34,18 @@ class LocalFallbackIndex:
         return [doc for _, doc in scored[:k]]
 
 
+@lru_cache(maxsize=1)
 def build_embeddings():
+    warnings.filterwarnings(
+        "ignore",
+        message=".*clean_up_tokenization_spaces.*",
+        category=FutureWarning,
+        module="transformers.tokenization_utils_base",
+    )
     return HuggingFaceEmbeddings(
         model_name=SETTINGS.embedding_model,
         model_kwargs={"trust_remote_code": True},
-        encode_kwargs={"normalize_embeddings": True, "clean_up_tokenization_spaces": True}
+        encode_kwargs={"normalize_embeddings": True}
     )
 
 
@@ -52,15 +62,16 @@ def init_vector_index(docs: List[Document]):
                     metric="cosine",
                     spec=ServerlessSpec(cloud="aws", region=SETTINGS.pinecone_environment),
                 )
-            vector_store = PineconeVectorStore.from_documents(
-                documents=docs,
-                embedding=build_embeddings(),
-                index_name=index_name,
-                namespace="enterprise",
-            )
-            return vector_store
+            stores = {}
+            for namespace in {doc.metadata.get("namespace", "general") for doc in docs}:
+                namespace_docs = [doc for doc in docs if doc.metadata.get("namespace", "general") == namespace]
+                stores[namespace] = PineconeVectorStore.from_documents(
+                    documents=namespace_docs, embedding=build_embeddings(),
+                    index_name=index_name, namespace=namespace,
+                )
+            return stores
         except Exception:
-            pass
+            logging.getLogger(__name__).exception("Pinecone indexing failed; using local index")
     return LocalFallbackIndex(docs)
 
 
@@ -75,9 +86,8 @@ def search_documents(query: str, namespace: str, docs: List[Document], k: int = 
             result = vector_store.similarity_search(query, k=k, namespace=namespace)
             if result:
                 return result
-        except Exception as e:
-            # Fall back to local if Pinecone fails
-            pass
+        except Exception:
+            logging.getLogger(__name__).exception("Pinecone search failed; using local index")
     
     # Use local fallback
     fallback = LocalFallbackIndex(docs)

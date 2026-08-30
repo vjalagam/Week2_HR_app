@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TypedDict
 
 from langchain_core.documents import Document
@@ -11,13 +12,14 @@ from langgraph.graph import END, StateGraph
 from .config import SETTINGS
 from .data_ingestion import chunk_documents, load_enterprise_documents
 from .vector_store import search_documents
+from .security import allowed_namespaces
 
 # Constants
 MAX_RETRIES = 2
 TOP_K_PER_NAMESPACE = 4
 TOP_K_GENERAL = 2
 GRADER_CHUNK_LIMIT = 1500
-CHECKER_CHUNK_LIMIT = 800
+CHECKER_CONTEXT_LIMIT = 6000
 
 
 class RAGState(TypedDict):
@@ -28,6 +30,26 @@ class RAGState(TypedDict):
     generation: str  # the generated answer
     hallucination_result: str  # 'grounded', 'not_grounded'
     retry_count: int
+    role: str
+    conversation_history: list[dict[str, str]]
+    correlation_id: str
+    retrieval_query: str
+
+
+def contextualize_question(question: str, history: list[dict[str, str]]) -> str:
+    """Add the latest user turn to short/ambiguous follow-ups for routing and search."""
+    prior_user_messages = [
+        item.get("content", "").strip()
+        for item in history
+        if item.get("role") == "user" and item.get("content", "").strip()
+    ]
+    if not prior_user_messages:
+        return question
+    ambiguous = len(question.split()) < 8 or any(
+        token in question.lower().split()
+        for token in {"it", "that", "this", "they", "those", "there", "also"}
+    )
+    return f"Previous question: {prior_user_messages[-1]}\nFollow-up question: {question}" if ambiguous else question
 
 
 def get_llm():
@@ -37,6 +59,8 @@ def get_llm():
             api_key=SETTINGS.nebius_api_key,
             base_url=SETTINGS.nebius_base_url,
             temperature=0.1,
+            timeout=30,
+            max_retries=1,
         )
     return None
 
@@ -85,8 +109,11 @@ classify_namespace = route_question_fallback
 def router_node(state: RAGState) -> RAGState:
     """Entry point: classify the question into a namespace."""
     question = state["question"]
-    state["doc_type"] = route_question_llm(question)
+    retrieval_query = contextualize_question(question, state.get("conversation_history", []))
+    state["retrieval_query"] = retrieval_query
+    state["doc_type"] = route_question_llm(retrieval_query)
     state["retry_count"] = 0
+    logging.getLogger(__name__).info("routed namespace=%s", state["doc_type"])
     return state
 
 
@@ -109,17 +136,25 @@ def retriever_node(state: RAGState) -> RAGState:
     """Retrieve documents from enterprise knowledge base."""
     all_docs = load_enterprise_documents()
     all_chunks = chunk_documents(all_docs)
-    question = state["question"]
+    question = state.get("retrieval_query") or state["question"]
     doc_type = state["doc_type"]
     retry_count = state.get("retry_count", 0)
     
-    # After failed grading, widen to general search
+    permitted = allowed_namespaces(state.get("role", "employee"))
+    if doc_type != "general" and doc_type not in permitted:
+        state["documents"] = []
+        state["grading_result"] = "access_denied"
+        return state
+
+    # After failed grading, widen to permitted namespaces only
     if state.get("grading_result") == "not_relevant" and retry_count > 0:
-        documents = retrieve_documents(question, "general", all_chunks)
+        documents = []
+        for namespace in sorted(permitted):
+            documents.extend(search_documents(question, namespace, all_chunks, k=TOP_K_GENERAL))
     else:
         documents = retrieve_documents(question, doc_type, all_chunks)
-    
-    state["documents"] = documents
+
+    state["documents"] = [d for d in documents if d.metadata.get("namespace") in permitted]
     return state
 
 
@@ -152,6 +187,9 @@ def grade_chunk(question: str, chunk: Document) -> bool:
 
 def grader_node(state: RAGState) -> RAGState:
     """Grade each retrieved document for relevance."""
+    if state.get("grading_result") == "access_denied":
+        state["generation"] = "You do not have permission to access documents in this category."
+        return state
     documents = state["documents"]
     question = state["question"]
     
@@ -176,6 +214,9 @@ def generator_node(state: RAGState) -> RAGState:
     documents = state["documents"]
     question = state["question"]
     llm = get_llm()
+    if state.get("grading_result") == "access_denied":
+        state["generation"] = "You do not have permission to access documents in this category."
+        return state
     
     # Format context: chunk text only, no filenames
     if documents:
@@ -193,7 +234,7 @@ def generator_node(state: RAGState) -> RAGState:
     
     try:
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a careful enterprise policy assistant for ACME documents (HR, Technical, Compliance).
+            ("system", """You are a careful enterprise policy assistant for ABC documents (HR, Technical, Compliance).
 STRICT RULES:
 1. ONLY answer questions directly related to enterprise HR policies, technical documentation, or compliance guidelines.
 2. If the question is NOT about these topics, respond ONLY with: "I can only answer questions about enterprise HR policies, technical documentation, and compliance guidelines. Your question appears to be outside this scope."
@@ -204,7 +245,12 @@ STRICT RULES:
             ("user", "Question: {question}\n\nContext:\n{context}")
         ])
         chain = prompt | llm
-        response = chain.invoke({"question": question, "context": context})
+        history = "\n".join(
+            f"{item.get('role', 'user')}: {item.get('content', '')[:500]}"
+            for item in state.get("conversation_history", [])[-6:]
+        )
+        contextual_question = f"Conversation history:\n{history}\n\nCurrent question: {question}" if history else question
+        response = chain.invoke({"question": contextual_question, "context": context})
         state["generation"] = response.content
     except Exception:
         # Fallback: use context directly if LLM fails
@@ -217,7 +263,7 @@ STRICT RULES:
 
 
 def check_hallucination_chunk(chunk: Document, generation: str) -> bool:
-    """Check if a single chunk supports the generation."""
+    """Check whether the combined source context fully supports the generation."""
     llm = get_llm()
     
     # Simple fallback: check keyword overlap
@@ -231,27 +277,18 @@ def check_hallucination_chunk(chunk: Document, generation: str) -> bool:
         return keyword_overlap_check(generation, chunk.page_content)
     
     try:
-        # Truncate chunk to CHECKER_CHUNK_LIMIT
-        truncated_content = chunk.page_content[:CHECKER_CHUNK_LIMIT]
+        truncated_content = chunk.page_content[:CHECKER_CONTEXT_LIMIT]
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a document fact-checker. Your task is to verify if the proposed answer is grounded in the chunk text.
+            ("system", """You are a hallucination detector. Determine whether an AI-generated answer is fully supported by the provided source document.
 
-GROUNDED means:
-- The chunk contains statements that directly support the answer
-- The chunk provides facts or details that are consistent with the answer
-- The answer's key claims are present or strongly implied in the chunk
-- Paraphrasing and different wording are acceptable
+Score "yes" -> The answer contains ONLY information that appears in the document.
+Score "no" -> The answer contains facts, numbers, or claims NOT found in the document.
 
-NOT grounded means:
-- The chunk contradicts the answer
-- The chunk is completely unrelated to the answer
-- The chunk doesn't address the answer's main points
-
-Be GENEROUS - if the chunk seems to support the answer in any meaningful way, mark as grounded.
-
-Return ONLY valid JSON: {"grounded": true} or {"grounded": false}"""),
-            ("user", "ANSWER TO CHECK:\n{generation}\n\nDOCUMENT CHUNK:\n{chunk}")
+Respond with JSON only.
+Format: {"score": "yes"} or {"score": "no"}
+No explanation, no extra text."""),
+            ("user", "AI-GENERATED ANSWER:\n{generation}\n\nSOURCE DOCUMENT:\n{chunk}")
         ])
         chain = prompt | llm
         response = chain.invoke({"generation": generation, "chunk": truncated_content})
@@ -259,8 +296,8 @@ Return ONLY valid JSON: {"grounded": true} or {"grounded": false}"""),
         # Extract JSON from response
         content = response.content.strip()
         result = json.loads(content)
-        return result.get("grounded", False) is True
-    except Exception as e:
+        return result.get("score", "no").lower() == "yes"
+    except Exception:
         # Fallback to simple keyword overlap check if LLM fails
         return keyword_overlap_check(generation, chunk.page_content)
 
@@ -276,15 +313,12 @@ def checker_node(state: RAGState) -> RAGState:
         state["hallucination_result"] = "grounded"
         return state
     
-    # Check each document supports the generation
-    grounded_count = 0
-    for doc in documents:
-        if check_hallucination_chunk(doc, generation):
-            grounded_count += 1
-    
-    # If majority of chunks support, mark as grounded
-    # With lenient checking, even 1 supporting chunk is often enough
-    if grounded_count > 0:
+    # Evaluate all retrieved sources together so claims may be supported across chunks.
+    combined_sources = Document(
+        page_content="\n\n---\n\n".join(doc.page_content for doc in documents),
+        metadata={"source": "combined_retrieval_context"},
+    )
+    if check_hallucination_chunk(combined_sources, generation):
         state["hallucination_result"] = "grounded"
     else:
         state["hallucination_result"] = "not_grounded"
@@ -300,6 +334,8 @@ def route_after_grader(state: RAGState):
     grading_result = state.get("grading_result")
     retry_count = state.get("retry_count", 0)
     
+    if grading_result == "access_denied":
+        return "generator"
     if grading_result == "not_relevant":
         # If max retries reached, proceed to generator anyway
         if retry_count >= MAX_RETRIES:

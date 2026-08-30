@@ -1,0 +1,5 @@
+[
+  {"question": "How many days of paid annual leave do full-time employees get?", "namespace": "hr", "reference": "Full-time employees receive 15 days of paid annual leave."},
+  {"question": "What is the API rate limit?", "namespace": "technical", "reference": "API rate limits are documented by service tier."},
+  {"question": "How should a security breach be reported?", "namespace": "compliance", "reference": "Security incidents must be reported through the incident response process."}
+]

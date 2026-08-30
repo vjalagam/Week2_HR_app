@@ -3,9 +3,16 @@ from __future__ import annotations
 import argparse
 
 from .graph import RAGState, build_graph
+from .observability import configure_logging, new_correlation_id, timed_operation
+from .security import check_rate_limit, validate_question
 
 
-def answer_question(question: str) -> str:
+def run_question(question: str, role: str = "employee", history: list[dict[str, str]] | None = None,
+                 identity: str = "cli", correlation_id: str | None = None) -> RAGState:
+    configure_logging()
+    question = validate_question(question)
+    check_rate_limit(identity)
+    request_id = new_correlation_id(correlation_id)
     graph = build_graph()
     state: RAGState = {
         "question": question,
@@ -14,9 +21,19 @@ def answer_question(question: str) -> str:
         "grading_result": "",
         "generation": "",
         "hallucination_result": "",
-        "retry_count": 0
+        "retry_count": 0,
+        "role": role,
+        "conversation_history": history or [],
+        "correlation_id": request_id,
+        "retrieval_query": question,
     }
-    result = graph.invoke(state)
+    with timed_operation("answer_question"):
+        result = graph.invoke(state)
+    return result
+
+
+def answer_question(question: str, role: str = "employee", history: list[dict[str, str]] | None = None) -> str:
+    result = run_question(question, role=role, history=history)
     return result.get("generation") or "I could not determine a grounded answer from the available enterprise documents."
 
 
@@ -24,6 +41,7 @@ def main():
     parser = argparse.ArgumentParser(description="Enterprise RAG over ABC docs")
     parser.add_argument("--question", type=str, help="Question to answer from enterprise documents")
     parser.add_argument("--index", action="store_true", help="Index the enterprise documents into the configured vector store")
+    parser.add_argument("--role", default="employee", choices=["admin", "hr", "engineer", "compliance", "employee"])
     args = parser.parse_args()
 
     if args.index:
@@ -39,7 +57,7 @@ def main():
     if not args.question:
         parser.error("Provide a --question value or use --index to build the vector index.")
 
-    response = answer_question(args.question)
+    response = answer_question(args.question, role=args.role)
     print(response)
 
 
