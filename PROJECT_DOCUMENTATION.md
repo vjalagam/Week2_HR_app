@@ -4,7 +4,7 @@
 **Application:** ABC Enterprise RAG Chatbot
 **Interface:** Streamlit web chat and Python CLI
 **Knowledge domains:** Human Resources, Technical Documentation, and Compliance/Security
-**Operating model:** Local-first learning project with optional Nebius and Pinecone integrations
+**Operating model:** Local-first learning project with optional DeepSeek and Pinecone integrations
 
 ## 1. Overview
 
@@ -74,7 +74,7 @@ The sketch separates document ingestion from the live question flow. Every user 
 
 ### Automatic routing and follow-ups
 
-The router returns `hr`, `technical`, `compliance`, or `general`. Nebius performs classification when configured; otherwise keyword routing is used. For short or referential follow-ups, the most recent user question is included in the internal retrieval query. Users never need to know the namespace structure.
+The router returns `hr`, `technical`, `compliance`, or `general`. DeepSeek performs classification when configured; otherwise keyword routing is used. For short or referential follow-ups, the most recent user question is included in the internal retrieval query. Users never need to know the namespace structure.
 
 ### Retrieval and access control
 
@@ -94,7 +94,7 @@ Each chunk is graded independently. The model must respond with `{"score":"yes"}
 
 ### Generation
 
-The generator receives only retrieved context plus limited recent conversation history. Its prompt prohibits unsupported information and out-of-domain answers. Without Nebius, the application returns an extractive portion of the source context.
+The generator receives only retrieved context plus limited recent conversation history. Its prompt prohibits unsupported information and out-of-domain answers. Without DeepSeek, the application returns an extractive portion of the source context.
 
 ### Strict hallucination checking
 
@@ -136,10 +136,10 @@ SQLite is appropriate for this single-machine learning project. No Docker, Kuber
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NEBIUS_API_KEY` | Empty | Enables Nebius LLM operations |
-| `NEBIUS_API_KEY_FILE` | Empty | Reads the Nebius key from a mounted file |
-| `NEBIUS_BASE_URL` | Nebius Token Factory URL | OpenAI-compatible endpoint |
-| `NEBIUS_MODEL` | `meta-llama/Llama-3.3-70B-Instruct` | Chat model |
+| `DEEPSEEK_API_KEY` | Empty | Enables DeepSeek LLM operations |
+| `DEEPSEEK_API_KEY_FILE` | Empty | Reads the DeepSeek key from a mounted file |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible endpoint |
+| `DEEPSEEK_MODEL` | `deepseek-chat` | Chat model |
 | `PINECONE_API_KEY` | Empty | Enables Pinecone retrieval |
 | `PINECONE_API_KEY_FILE` | Empty | Reads the Pinecone key from a mounted file |
 | `PINECONE_ENVIRONMENT` | Empty | Pinecone serverless region |
@@ -174,7 +174,7 @@ SQLite is appropriate for this single-machine learning project. No Docker, Kuber
 Run automated tests without using cloud providers:
 
 ```bash
-NEBIUS_API_KEY='' PINECONE_API_KEY='' pytest -q
+DEEPSEEK_API_KEY='' PINECONE_API_KEY='' pytest -q
 ```
 
 The current suite covers:
@@ -189,7 +189,7 @@ The current suite covers:
 Run the labeled evaluation:
 
 ```bash
-NEBIUS_API_KEY='' PINECONE_API_KEY='' \
+DEEPSEEK_API_KEY='' PINECONE_API_KEY='' \
 python -m enterprise_rag.evaluation evaluation/dataset.json
 ```
 
@@ -205,7 +205,7 @@ cp .env.example .env
 streamlit run ui.py
 ```
 
-Pinecone and Nebius are optional. Leave their keys empty for offline fallback mode. If Pinecone is enabled, index the source documents before relying on hosted retrieval.
+Pinecone and DeepSeek are optional. Leave their keys empty for offline fallback mode. If Pinecone is enabled, index the source documents before relying on hosted retrieval.
 
 ## 11. Current limitations
 

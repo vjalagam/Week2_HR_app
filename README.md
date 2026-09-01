@@ -1,4 +1,4 @@
-# Enterprise RAG with LangGraph + Pinecone + Nebius
+# Enterprise RAG with LangGraph + Pinecone + DeepSeek
 
 This project builds a production-hardened retrieval-augmented generation workflow for HR, technical, and compliance knowledge over enterprise documents.
 
@@ -35,7 +35,7 @@ The pipeline follows the requested 5-step flow:
    cp .env.example .env
 
 3. Add your API keys:
-   - `NEBIUS_API_KEY` for the LLM
+   - `DEEPSEEK_API_KEY` for the LLM
    - `PINECONE_API_KEY` for vector search
 
 4. Build the Pinecone index and load documents:
@@ -49,12 +49,12 @@ The pipeline follows the requested 5-step flow:
 ## Notes
 
 - When external API keys are not configured, the app falls back to a local lexical retrieval path so the system still runs in a demo/offline mode.
-- When Nebius credentials are present, the router, grader, generator, and checker use the Nebius Token Factory OpenAI-compatible endpoint.
+- When DeepSeek credentials are present, the router, grader, generator, and checker use the DeepSeek OpenAI-compatible endpoint.
 
 ## Production controls
 
 - The UI currently runs directly in local-demo mode without authentication.
-- Production secrets can be mounted through `NEBIUS_API_KEY_FILE` and `PINECONE_API_KEY_FILE`.
+- Production secrets can be mounted through `DEEPSEEK_API_KEY_FILE` and `PINECONE_API_KEY_FILE`.
 - Chat history and user feedback persist locally in SQLite at `RAG_DATABASE_PATH`.
 - Every request emits JSON logs containing a correlation ID and latency. The UI exposes that ID for support investigations.
 - Questions are length-validated and rate-limited for the local application identity.

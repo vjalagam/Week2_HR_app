@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TypedDict
 
 from langchain_core.documents import Document
@@ -50,12 +51,20 @@ def contextualize_question(question: str, history: list[dict[str, str]]) -> str:
     return f"Previous question: {prior_user_messages[-1]}\nFollow-up question: {question}" if ambiguous else question
 
 
+def normalize_retrieval_query(question: str) -> str:
+    """Add policy terminology for common natural-language synonyms."""
+    normalized = question.strip()
+    if re.search(r"\b(vacation|vacations|holiday|holidays|pto)\b", normalized, re.IGNORECASE):
+        normalized += " annual leave paid leave days"
+    return normalized
+
+
 def get_llm():
-    if SETTINGS.has_nebius:
+    if SETTINGS.has_deepseek:
         return ChatOpenAI(
-            model=SETTINGS.nebius_model,
-            api_key=SETTINGS.nebius_api_key,
-            base_url=SETTINGS.nebius_base_url,
+            model=SETTINGS.deepseek_model,
+            api_key=SETTINGS.deepseek_api_key,
+            base_url=SETTINGS.deepseek_base_url,
             temperature=0.1,
             timeout=30,
             max_retries=1,
@@ -65,6 +74,11 @@ def get_llm():
 
 def route_question_llm(question: str) -> str:
     """LLM-driven router: one call to classify into 4 namespaces."""
+    # Known domain vocabulary is more reliable and cheaper to route deterministically.
+    deterministic_route = route_question_fallback(question)
+    if deterministic_route != "general":
+        return deterministic_route
+
     llm = get_llm()
     if llm is None:
         # Fallback to keyword-based routing if no LLM available
@@ -91,12 +105,14 @@ def route_question_llm(question: str) -> str:
 def route_question_fallback(question: str) -> str:
     """Keyword-based fallback routing."""
     lower = question.lower()
-    if any(term in lower for term in ["gdpr", "privacy", "security", "breach", "incident", "compliance", "audit", "vendor", "policy", "data retention"]):
+    if any(term in lower for term in ["gdpr", "privacy", "security", "breach", "incident", "compliance", "audit", "vendor", "data retention"]):
         return "compliance"
+    if any(term in lower for term in ["leave", "vacation", "holiday", "pto", "sick", "maternity", "paternity", "remote work", "manager", "payroll", "benefit", "hr", "employee"]):
+        return "hr"
     if any(term in lower for term in ["api", "rate limit", "oauth", "aws", "kubernetes", "deployment", "database", "webhook", "sdk", "sla", "server"]):
         return "technical"
-    if any(term in lower for term in ["leave", "vacation", "sick", "maternity", "paternity", "remote work", "manager", "payroll", "benefit", "hr", "employee"]):
-        return "hr"
+    if "policy" in lower:
+        return "compliance"
     return "general"
 
 
@@ -107,7 +123,9 @@ classify_namespace = route_question_fallback
 def router_node(state: RAGState) -> RAGState:
     """Entry point: classify the question into a namespace."""
     question = state["question"]
-    retrieval_query = contextualize_question(question, state.get("conversation_history", []))
+    retrieval_query = normalize_retrieval_query(
+        contextualize_question(question, state.get("conversation_history", []))
+    )
     state["retrieval_query"] = retrieval_query
     state["doc_type"] = route_question_llm(retrieval_query)
     state["retry_count"] = 0
@@ -178,7 +196,7 @@ def grade_chunk(question: str, chunk: Document) -> bool:
 def grader_node(state: RAGState) -> RAGState:
     """Grade each retrieved document for relevance."""
     documents = state["documents"]
-    question = state["question"]
+    question = state.get("retrieval_query") or state["question"]
     
     # Grade each chunk
     filtered = [doc for doc in documents if grade_chunk(question, doc)]
@@ -225,7 +243,9 @@ STRICT RULES:
 3. Answer ONLY using the provided context - never add information not in the documents.
 4. If the context is empty or clearly irrelevant to the question, refuse to answer.
 5. Do not mention document filenames or formatting.
-6. Be direct and concise."""),
+6. Treat common wording such as vacation, holiday, or PTO as annual leave when the context contains an annual-leave policy.
+7. Prefer an explicit, direct answer with the relevant unit (for example, days per calendar year), followed by any necessary qualification.
+8. Be direct and concise."""),
             ("user", "Question: {question}\n\nContext:\n{context}")
         ])
         chain = prompt | llm

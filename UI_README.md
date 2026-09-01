@@ -104,9 +104,9 @@ Each assistant response shows:
 Optional `.env` file settings:
 ```bash
 # LLM Configuration
-NEBIUS_API_KEY=your-key
-NEBIUS_BASE_URL=https://api.studio.nebius.ai/v1
-NEBIUS_MODEL=Qwen/Qwen2.5-72B-Instruct
+DEEPSEEK_API_KEY=your-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
 
 # Vector Database (Pinecone)
 PINECONE_API_KEY=your-key
@@ -168,7 +168,7 @@ streamlit run ui.py --client.showErrorDetails=true
 - **Frontend**: Pure Streamlit (Python-based UI)
 - **Backend**: LangGraph RAG pipeline
 - **Retrieval**: Local fallback + optional Pinecone
-- **LLM**: Optional Nebius/OpenAI compatible
+- **LLM**: Optional DeepSeek/OpenAI compatible
 - **Embeddings**: HuggingFace sentence-transformers
 
 ## Performance

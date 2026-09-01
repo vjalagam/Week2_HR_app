@@ -61,7 +61,7 @@ with st.sidebar:
             - Checker: 1 LLM call per attempt
             """
         )
-        st.caption("Calls use local fallbacks when Nebius or Pinecone is unavailable.")
+        st.caption("Calls use local fallbacks when DeepSeek or Pinecone is unavailable.")
 
     with st.expander("Answer details", expanded=False):
         st.markdown(
@@ -78,7 +78,7 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### Connection status")
-    st.write(f"Nebius LLM: {'Connected' if SETTINGS.has_nebius else 'Local fallback'}")
+    st.write(f"DeepSeek LLM: {'Connected' if SETTINGS.has_deepseek else 'Local fallback'}")
     st.write(f"Pinecone: {'Configured' if SETTINGS.has_pinecone else 'Local fallback'}")
 
 def show_message(message):
@@ -99,10 +99,8 @@ def show_message(message):
                 if right.button("👎 Not helpful", key=f"down-{message_id}"):
                     store.add_feedback(message_id, st.session_state.session_id, username, -1)
 
-for message in st.session_state.messages:
-    show_message(message)
 
-if prompt := st.chat_input("Ask a question in your own words..."):
+def submit_prompt(prompt):
     user_message = {"role": "user", "content": prompt, "metadata": {}}
     user_message["id"] = store.add_message(st.session_state.session_id, username, "user", prompt)
     st.session_state.messages.append(user_message)
@@ -124,3 +122,23 @@ if prompt := st.chat_input("Ask a question in your own words..."):
         st.error(str(exc))
     except Exception:
         st.error("The request failed. Check the structured logs for its correlation ID.")
+
+
+if not st.session_state.messages:
+    st.markdown("#### Try an example")
+    examples = [
+        "How many vacation days do full-time employees receive?",
+        "When can employees work remotely?",
+        "What should I do after a data breach?",
+        "What is the API rate limit?",
+    ]
+    columns = st.columns(2)
+    for index, example in enumerate(examples):
+        if columns[index % 2].button(example, key=f"example-{index}", use_container_width=True):
+            submit_prompt(example)
+
+for message in st.session_state.messages:
+    show_message(message)
+
+if prompt := st.chat_input("Ask a question in your own words..."):
+    submit_prompt(prompt)

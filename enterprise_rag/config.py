@@ -26,9 +26,9 @@ class Settings:
     pinecone_api_key: Optional[str] = secret("PINECONE_API_KEY")
     pinecone_environment: Optional[str] = os.getenv("PINECONE_ENVIRONMENT")
     pinecone_index_name: str = os.getenv("PINECONE_INDEX_NAME", "abc-enterprise-rag")
-    nebius_api_key: Optional[str] = secret("NEBIUS_API_KEY")
-    nebius_base_url: str = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
-    nebius_model: str = os.getenv("NEBIUS_MODEL", "meta-llama/Llama-3.3-70B-Instruct")
+    deepseek_api_key: Optional[str] = secret("DEEPSEEK_API_KEY")
+    deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     database_path: Path = Path(os.getenv("RAG_DATABASE_PATH", str(project_root / "data" / "rag.db")))
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
@@ -36,8 +36,8 @@ class Settings:
     max_question_length: int = int(os.getenv("MAX_QUESTION_LENGTH", "2000"))
 
     @property
-    def has_nebius(self) -> bool:
-        return bool(self.nebius_api_key)
+    def has_deepseek(self) -> bool:
+        return bool(self.deepseek_api_key)
 
     @property
     def has_pinecone(self) -> bool:

@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 from enterprise_rag.app import answer_question
-from enterprise_rag.graph import classify_namespace, contextualize_question
+from enterprise_rag.graph import classify_namespace, contextualize_question, normalize_retrieval_query
 from enterprise_rag.security import validate_question
 from enterprise_rag.storage import ChatStore
 from enterprise_rag.evaluation import token_f1
@@ -14,6 +14,12 @@ class TestRAGPipeline(unittest.TestCase):
         self.assertEqual(classify_namespace("How much annual leave do full-time employees receive?"), "hr")
         self.assertEqual(classify_namespace("What is the API rate limit for enterprise tier?"), "technical")
         self.assertEqual(classify_namespace("What is the GDPR retention period for employee data?"), "compliance")
+        self.assertEqual(classify_namespace("How many vacations?"), "hr")
+        self.assertEqual(classify_namespace("What is the vacation policy?"), "hr")
+
+    def test_vacation_query_uses_policy_language(self):
+        query = normalize_retrieval_query("How many vacations?")
+        self.assertIn("annual leave", query.lower())
 
     def test_answer_question_without_llm(self):
         answer = answer_question("How many days of paid annual leave do full-time employees get?")
